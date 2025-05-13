@@ -1,4 +1,7 @@
-# Environnement virtuel local
+# Environnement virtuel
+venv/
+env/
+ENV/
 .venv/
 
 # Fichiers Python compilés
@@ -14,3 +17,11 @@ __pycache__/
 # Fichiers temporaires
 *.log
 *.tmp
+.vscode/
+
+# Fichiers de logs
+*.log
+logs/
+
+# Jupyter Notebook
+.ipynb_checkpoints
