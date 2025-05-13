@@ -1,0 +1,16 @@
+# Environnement virtuel local
+.venv/
+
+# Fichiers Python compilés
+__pycache__/
+*.pyc
+
+# Fichier de configuration sensible
+.env
+
+# Fichiers Word
+*.docx
+
+# Fichiers temporaires
+*.log
+*.tmp
