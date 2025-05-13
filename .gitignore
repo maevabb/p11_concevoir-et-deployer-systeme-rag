@@ -8,8 +8,8 @@ __pycache__/
 # Fichier de configuration sensible
 .env
 
-# Fichiers Word
-*.docx
+# Fichiers de présentation
+/Docs/
 
 # Fichiers temporaires
 *.log
