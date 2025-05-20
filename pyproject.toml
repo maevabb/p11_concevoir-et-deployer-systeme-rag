@@ -10,8 +10,15 @@ python = "^3.13"
 pandas = "^2.2.3"
 numpy = "^2.2.5"
 langchain = "^0.3.25"
+seaborn = "^0.13.2"
+matplotlib = "^3.10.3"
+ipykernel = "^6.29.5"
+scikit-learn = "^1.6.1"
+faiss-cpu = "^1.11.0"
+mistralai = "^1.7.0"
 
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
