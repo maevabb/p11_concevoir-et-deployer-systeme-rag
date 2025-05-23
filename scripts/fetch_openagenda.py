@@ -80,7 +80,8 @@ def save_raw_events(events: list, output_path: str = "data/events_raw.json") -> 
         events (list): Liste d'événements.
         output_path (str): Chemin du fichier de sortie.
     """
-    Path("data").mkdir(exist_ok=True)
+    out_dir = Path(output_path).parent
+    out_dir.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(events, f, ensure_ascii=False, indent=2)
     print(f"📁 Données brutes sauvegardées dans {output_path}")

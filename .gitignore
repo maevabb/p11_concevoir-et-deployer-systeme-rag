@@ -7,21 +7,34 @@ ENV/
 # Fichiers Python compilés
 __pycache__/
 *.pyc
+*.pyo
+
+# Cache pytest and coverage
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Fichier de configuration sensible
 .env
 
 # Fichiers de présentation
 /Docs/
+/Bin/
 
-# Fichiers temporaires
+# Dossier de données générées
+/data/
+
+# Fichiers temporaires et logs
 *.log
 *.tmp
-.vscode/
-
-# Fichiers de logs
-*.log
 logs/
+/.vscode/
+*.swp
+*~
+# Mac / système
+.DS_Store
+Thumbs.db
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Mypy, isort, etc.
+.mypy_cache/
+.pyre/
