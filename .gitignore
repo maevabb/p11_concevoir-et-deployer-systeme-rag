@@ -20,6 +20,7 @@ htmlcov/
 # Fichiers de présentation
 /Docs/
 /Bin/
+/notebooks/
 
 # Dossier de données générées
 /data/
