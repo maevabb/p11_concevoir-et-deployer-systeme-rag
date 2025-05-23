@@ -5,6 +5,7 @@ from pathlib import Path
 
 # === Paramètres ===
 BASE_URL = "https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/evenements-publics-openagenda"
+OUTPUT_PATH = "data/events_raw.json"
 
 CITY = "Paris"
 
@@ -68,7 +69,6 @@ def fetch_openagenda_events(base_url: str,
         events = data.get("results", [])
         total = data.get("total_count", len(events))
 
-    print(f"Nombre d'évènements exportés: {total}")
     return events, total
 
 # === Enregistrement dans un fichier JSON ===
@@ -89,5 +89,11 @@ def save_raw_events(events: list, output_path: str = "data/events_raw.json") -> 
 # === Exécution principale ===
 if __name__ == "__main__":
     print(f"➡️ Chargement des événements pour {CITY} entre {START_DATE} et {END_DATE}")
-    events = fetch_openagenda_events(BASE_URL, EXPORT_FORMAT, -1, 0, START_DATE, END_DATE, CITY)
-    save_raw_events(events)
+    events, total = fetch_openagenda_events(BASE_URL, EXPORT_FORMAT, -1, 0, START_DATE, END_DATE, CITY)  
+    save_raw_events(events, OUTPUT_PATH)
+
+    with open(OUTPUT_PATH, encoding="utf-8") as f:
+        loaded = json.load(f)
+    count = len(loaded) if isinstance(loaded, list) else 0
+
+    print(f"📊 Nombre d'événements dans le fichier : {count} (total attendu : {total})")
