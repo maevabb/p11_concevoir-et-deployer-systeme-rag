@@ -44,9 +44,17 @@ def fetch_openagenda_events(base_url: str,
         "limit": limit,
         "offset": offset,
     }
-    if start_date and end_date and city:
-        params["where"] = f"firstdate_begin >= '{start_date}' AND firstdate_begin <= '{end_date}' AND location_city = '{city}'"
-    
+    conditions: list[str] = []
+    if start_date:
+        conditions.append(f"firstdate_begin >= '{start_date}'")
+    if end_date:
+        conditions.append(f"firstdate_begin <= '{end_date}'")
+    if city:
+        conditions.append(f"location_city = '{city}'")
+
+    if conditions:
+        params["where"] = " AND ".join(conditions)
+
     # Appel à l’export
     url = f"{base_url}/exports/{export_format}"
     response = requests.get(url, params=params)
@@ -82,4 +90,3 @@ if __name__ == "__main__":
     print(f"➡️ Chargement des événements pour {CITY} entre {START_DATE} et {END_DATE}")
     events = fetch_openagenda_events(BASE_URL, EXPORT_FORMAT, -1, 0, START_DATE, END_DATE, CITY)
     save_raw_events(events)
-
