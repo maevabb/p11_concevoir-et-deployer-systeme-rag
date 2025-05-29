@@ -85,10 +85,6 @@ def combine_descriptions(df: pd.DataFrame) -> pd.DataFrame:
     print(f"→ Champ 'description' enrichi créé pour {len(df)} événements")
     return df
 
-    df['description'] = df.apply(make_desc, axis=1)
-    print(f"→ Champ 'description' enrichi créé pour {len(df)} événements")
-    return df
-
 def select_columns(df: pd.DataFrame, cols) -> pd.DataFrame:
     """
     Ne garde que les colonnes listées.
