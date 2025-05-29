@@ -5,7 +5,7 @@ from pathlib import Path
 
 INPUT_PATH  = Path("data/events_raw.json")
 OUTPUT_PATH = Path("data/events_clean.json")
-SELECT_COLUMNS = ["uid","title_fr","description_fr","longdescription_fr","firstdate_begin","firstdate_end"]
+SELECT_COLUMNS = ["uid","title_fr","description_fr","longdescription_fr","firstdate_begin","firstdate_end", "location_city"]
 
 # === Fonctions ===
 
