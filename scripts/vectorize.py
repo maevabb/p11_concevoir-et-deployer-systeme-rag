@@ -96,6 +96,7 @@ for e in events:
         "title_fr":           e.get("title_fr"),
         "firstdate_begin":    e.get("firstdate_begin"),
         "firstdate_end":      e.get("firstdate_end"),
+        "location_address":   e.get("location_address"),
         "location_city":      e.get("location_city"),
         "description_fr":     e.get("description_fr"),
     })
@@ -123,5 +124,6 @@ for rank, idx in enumerate(indices[0]):
     print(f"{rank+1}. uid={info['uid']}  score={distances[0][rank]:.4f}")
     print(f"    titre   : {info['title_fr']}")
     print(f"    dates   : {info['firstdate_begin']} → {info['firstdate_end']}")
-    print(f"    lieu    : {info['location_city']}")
+    print(f"    lieu    : {info['location_adress']}")
+    print(f"    ville   : {info['location_city']}")
     print(f"    snippet : {texts[idx][:200].replace('\\n',' ')}…\n")

@@ -5,7 +5,7 @@ from pathlib import Path
 
 INPUT_PATH  = Path("data/events_raw.json")
 OUTPUT_PATH = Path("data/events_clean.json")
-SELECT_COLUMNS = ["uid","title_fr","description_fr","longdescription_fr","firstdate_begin","firstdate_end", "location_city"]
+SELECT_COLUMNS = ["uid","title_fr","description_fr","longdescription_fr","firstdate_begin","firstdate_end","location_address" ,"location_city"]
 
 # === Fonctions ===
 
@@ -113,7 +113,7 @@ def main():
         date_cols = [c for c in ["firstdate_begin", "firstdate_end"] if c in SELECT_COLUMNS]
         if date_cols:
             df = format_dates(df, date_cols)
-            
+
     # 4. Sauvegarde
     save_data(df, OUTPUT_PATH)
 
