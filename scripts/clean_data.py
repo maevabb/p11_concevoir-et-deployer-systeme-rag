@@ -1,5 +1,7 @@
 import pandas as pd
 from pathlib import Path
+from bs4 import BeautifulSoup
+import html
 
 # === Paramètres ===
 
@@ -48,18 +50,40 @@ def drop_missing_title_or_desc(df: pd.DataFrame) -> pd.DataFrame:
     print(f"→ Lignes supprimées (titre ou description manquants) : {before - after}")
     return df
 
+def clean_html(raw: str) -> str:
+    """
+    Supprime les balises HTML et décode les entités,
+    puis contracte les espaces multiples.
+    """
+    # 1) Extraire le texte brut
+    text = BeautifulSoup(raw or "", "html.parser").get_text(separator=" ")
+    # 2) Décoder les entités HTML (&amp; → &)
+    text = html.unescape(text)
+    # 3) Écraser les multiples espaces / retours-ligne
+    return " ".join(text.split())
+
 def combine_descriptions(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Concatène title_fr, description_fr et longdescription_fr en un seul champ 'description'.
+    Concatène title_fr, description_fr et longdescription_fr en un seul champ 'description',
+    puis nettoie le HTML.
     """
     def make_desc(row):
-        parts = [
-            f"Titre : {row['title_fr']}",
-            f"Résumé : {row['description_fr']}" if pd.notna(row['description_fr']) else None,
-            f"Détails : {row['longdescription_fr']}" if pd.notna(row['longdescription_fr']) else None,
-        ]
-        # On ne garde que les parties non nulles, séparées par deux retours
-        return "\n\n".join([p for p in parts if p])
+        parts = []
+        # Titre
+        if pd.notna(row["title_fr"]):
+            parts.append(f"Titre : {row['title_fr']}")
+        # Résumé
+        if pd.notna(row["description_fr"]):
+            parts.append(f"Résumé : {row['description_fr']}")
+        # Détails
+        if pd.notna(row["longdescription_fr"]):
+            parts.append(f"Détails : {clean_html(row['longdescription_fr'])}")
+        # Concatène et nettoie le HTML dans chaque bloc
+        return "\n\n".join(parts)
+
+    df["description"] = df.apply(make_desc, axis=1)
+    print(f"→ Champ 'description' enrichi créé pour {len(df)} événements")
+    return df
 
     df['description'] = df.apply(make_desc, axis=1)
     print(f"→ Champ 'description' enrichi créé pour {len(df)} événements")
