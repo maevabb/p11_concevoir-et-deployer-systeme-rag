@@ -8,7 +8,7 @@ import time
 from mistralai.models.sdkerror import SDKError
 
 # === Paramètres ===
-API_KEY = "oNWTwHqZt2UjVWsnVUyLwJevo6OWZfXR"
+API_KEY = os.getenv("MISTRAL_API_KEY")
 MODEL_NAME = "mistral-embed"
 BATCH_SIZE = 50              # nombre de textes par appel API
 CLEAN_PATH = Path("data/events_clean.json")
@@ -124,5 +124,4 @@ for rank, idx in enumerate(indices[0]):
     print(f"    titre   : {info['title_fr']}")
     print(f"    dates   : {info['firstdate_begin']} → {info['firstdate_end']}")
     print(f"    lieu    : {info['location_city']}")
-    print(f"    snippet : {texts[idx][:60].replace('\\n',' ')}…\n")
-
+    print(f"    snippet : {texts[idx][:200].replace('\\n',' ')}…\n")
