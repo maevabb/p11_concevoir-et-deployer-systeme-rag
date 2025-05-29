@@ -5,7 +5,7 @@ from pathlib import Path
 
 INPUT_PATH  = Path("data/events_raw.json")
 OUTPUT_PATH = Path("data/events_clean.json")
-SELECT_COLUMNS = ["uid","title_fr","description_fr","longdescription_fr","firstdate_begin","firstdate_end","location_address" ,"location_city"]
+SELECT_COLUMNS = ["uid","title_fr","description","firstdate_begin","firstdate_end","location_address" ,"location_city"]
 
 # === Fonctions ===
 
@@ -46,6 +46,23 @@ def drop_missing_title_or_desc(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["title_fr", "description_fr"], how="any")
     after = len(df)
     print(f"→ Lignes supprimées (titre ou description manquants) : {before - after}")
+    return df
+
+def combine_descriptions(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Concatène title_fr, description_fr et longdescription_fr en un seul champ 'description'.
+    """
+    def make_desc(row):
+        parts = [
+            f"Titre : {row['title_fr']}",
+            f"Résumé : {row['description_fr']}" if pd.notna(row['description_fr']) else None,
+            f"Détails : {row['longdescription_fr']}" if pd.notna(row['longdescription_fr']) else None,
+        ]
+        # On ne garde que les parties non nulles, séparées par deux retours
+        return "\n\n".join([p for p in parts if p])
+
+    df['description'] = df.apply(make_desc, axis=1)
+    print(f"→ Champ 'description' enrichi créé pour {len(df)} événements")
     return df
 
 def select_columns(df: pd.DataFrame, cols) -> pd.DataFrame:
@@ -104,6 +121,7 @@ def main():
     df = drop_duplicates(df)
     df = drop_empty_columns(df)
     df = drop_missing_title_or_desc(df)
+    df = combine_descriptions(df)
     
     # 3. Sélection de colonnes (optionnelle)
     if SELECT_COLUMNS:

@@ -23,7 +23,7 @@ if not API_KEY:
 with CLEAN_PATH.open(encoding="utf-8") as f:
     events = json.load(f)
 
-texts = [e["description_fr"] or "" for e in events]
+texts = [e["description"] or "" for e in events]
 uids  = [e["uid"] for e in events]
 
 print(f"🔍 {len(texts)} descriptions à vectoriser (modèle={MODEL_NAME})")
