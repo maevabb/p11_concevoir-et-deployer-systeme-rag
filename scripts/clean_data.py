@@ -64,6 +64,27 @@ def select_columns(df: pd.DataFrame, cols) -> pd.DataFrame:
         raise TypeError("SELECT_COLUMNS doit être une liste")
     return df
 
+def format_dates(df: pd.DataFrame, date_cols: list[str]) -> pd.DataFrame:
+    """
+    Formate les colonnes datetime pour afficher 'YYYY-MM-DD HH:MM'.
+    
+    Args:
+        df (pd.DataFrame): DataFrame en entrée.
+        date_cols (list[str]): Liste des noms de colonnes datetime à formater.
+    
+    Returns:
+        pd.DataFrame: DataFrame avec les colonnes formatées.
+    """
+    for col in date_cols:
+        if col in df.columns:
+            # conversion en datetime (tolère les strings ISO)
+            df[col] = pd.to_datetime(df[col], utc=True, errors="coerce") \
+                        .dt.tz_localize(None) \
+                        .dt.strftime("%Y-%m-%d %H:%M")
+            print(f"→ Colonne '{col}' reformatée")
+    return df
+
+
 def save_data(df: pd.DataFrame, path: Path) -> None:
     """
     Sauvegarde le DataFrame en JSON indenté.
@@ -87,7 +108,12 @@ def main():
     # 3. Sélection de colonnes (optionnelle)
     if SELECT_COLUMNS:
         df = select_columns(df, SELECT_COLUMNS)
-    
+        
+        # 3.bis. Formatage des dates si présentes
+        date_cols = [c for c in ["firstdate_begin", "firstdate_end"] if c in SELECT_COLUMNS]
+        if date_cols:
+            df = format_dates(df, date_cols)
+            
     # 4. Sauvegarde
     save_data(df, OUTPUT_PATH)
 
