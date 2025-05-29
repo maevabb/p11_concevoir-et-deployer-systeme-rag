@@ -54,7 +54,7 @@ def select_columns(df: pd.DataFrame, cols) -> pd.DataFrame:
 
     Args:
         df (DataFrame): DataFrame en entrée.
-        cols (list[str] | dict[str,str]): 
+        cols (list[str]): 
             - liste de noms de colonnes à conserver
     """
     if isinstance(cols, (list, tuple)):
