@@ -93,3 +93,24 @@ meta = [{"uid": u} for u in uids]
 with METADATA_PATH.open("w", encoding="utf-8") as f:
     json.dump(meta, f, ensure_ascii=False, indent=2)
 print(f"💾 Métadonnées sauvegardées dans {METADATA_PATH}")
+
+# 1. Une requête de test
+test_query = "Musique Ukraine"
+print(f"\n🔎 Test search pour : « {test_query} »")
+
+# 2. Génération de l'embedding de la requête
+q_emb = embed_batch([test_query])[0].astype("float32")
+# 3. Normalisation pour similarité cosinus
+faiss.normalize_L2(q_emb.reshape(1, -1))
+
+# 4. Recherche des k plus proches voisins
+k = 5
+distances, indices = index.search(q_emb.reshape(1, -1), k)
+
+# 5. Affichage des résultats
+for rank, idx in enumerate(indices[0]):
+    uid   = uids[idx]
+    score = distances[0][rank]
+    snippet = texts[idx][:60].replace("\n", " ")
+    print(f"{rank+1}. uid={uid}  score={score:.4f}  text=\"{snippet}…\"")
+
