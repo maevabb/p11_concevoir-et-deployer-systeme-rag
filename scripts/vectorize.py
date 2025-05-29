@@ -1,129 +1,107 @@
 import os
 import json
+import time
+from pathlib import Path
 import numpy as np
 import faiss
-from pathlib import Path
 from mistralai import Mistral
-import time
 from mistralai.models.sdkerror import SDKError
 
 # === Paramètres ===
-API_KEY = os.getenv("MISTRAL_API_KEY")
-MODEL_NAME = "mistral-embed"
-BATCH_SIZE = 50              # nombre de textes par appel API
-CLEAN_PATH = Path("data/events_clean.json")
-FAISS_PATH = Path("data/faiss_index.idx")
+API_KEY       = os.getenv("MISTRAL_API_KEY")
+MODEL_NAME    = "mistral-embed"
+BATCH_SIZE    = 50
+CLEAN_PATH    = Path("data/events_clean.json")
+FAISS_PATH    = Path("data/faiss_index.idx")
 METADATA_PATH = Path("data/faiss_metadata.json")
 
-# 1) Vérifications
-if not API_KEY:
-    raise RuntimeError("MISTRAL_API_KEY non défini dans l'environnement")
+def load_cleaned_events(path: Path) -> list[dict]:
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found")
+    with path.open(encoding="utf-8") as f:
+        return json.load(f)
 
-# 2) Charge les données nettoyées
-with CLEAN_PATH.open(encoding="utf-8") as f:
-    events = json.load(f)
+def init_mistral_client(api_key: str) -> Mistral:
+    if not api_key:
+        raise RuntimeError("MISTRAL_API_KEY is missing")
+    return Mistral(api_key=api_key)
 
-texts = [e["description"] or "" for e in events]
-uids  = [e["uid"] for e in events]
-
-print(f"🔍 {len(texts)} descriptions à vectoriser (modèle={MODEL_NAME})")
-
-# 3) Instancie le client
-client = Mistral(api_key=API_KEY)
-
-def embed_batch(batch: list[str], max_retries: int = 5) -> np.ndarray:
-    """
-    Renvoie un array float32 (batch_size, dim) pour la liste de batch,
-    avec retry en cas de 429 (rate limit).
-    """
-    for attempt in range(1, max_retries + 1):
+def embed_batch(client: Mistral, texts: list[str], max_retries: int = 5) -> np.ndarray:
+    for attempt in range(1, max_retries+1):
         try:
-            resp = client.embeddings.create(
-                model=MODEL_NAME,
-                inputs=batch,
-            )
-            embeddings = [item.embedding for item in resp.data]
-            return np.array(embeddings, dtype="float32")
-
+            resp = client.embeddings.create(model=MODEL_NAME, inputs=texts)
+            return np.array([d.embedding for d in resp.data], dtype="float32")
         except SDKError as e:
-            # 429 rate limit
             if e.status_code == 429 and attempt < max_retries:
-                wait = 2 ** attempt  # 2, 4, 8, 16, ...
-                print(f"⚠️  Rate limit (429), retry #{attempt} après {wait}s…")
+                wait = 2 ** attempt
+                print(f"⚠️ Rate limit, retry #{attempt} after {wait}s")
                 time.sleep(wait)
                 continue
-            # on ne connaît pas le code, ou on a épuisé les retries
-            print(f"❌ Erreur Mistral (status={e.status_code}): {e}. Abandon.")
             raise
+    raise RuntimeError("Failed to embed batch after retries")
 
-        except Exception as e:
-            print(f"❌ Erreur inattendue lors de l’embed (lot): {e}")
-            raise
+def build_embeddings_array(client: Mistral, descriptions: list[str]) -> np.ndarray:
+    all_embs = []
+    for i in range(0, len(descriptions), BATCH_SIZE):
+        batch = descriptions[i: i+BATCH_SIZE]
+        embs = embed_batch(client, batch)
+        print(f" → Batch {i//BATCH_SIZE+1}: {embs.shape}")
+        all_embs.append(embs)
+    return np.vstack(all_embs)
 
-    # Si jamais on boucle sans avoir retourné :
-    raise RuntimeError("Échec de la génération d'embeddings après retries.")
+def build_faiss_index(embeddings: np.ndarray) -> faiss.Index:
+    faiss.normalize_L2(embeddings)
+    dim = embeddings.shape[1]
+    index = faiss.IndexFlatIP(dim)
+    index.add(embeddings)
+    return index
 
-# 4 Générer tous les embeddings en batch
-all_embs = []
-for i in range(0, len(texts), BATCH_SIZE):
-    batch_texts = texts[i : i + BATCH_SIZE]
-    embs = embed_batch(batch_texts)
-    all_embs.append(embs)
-    print(f"  → Batch {i//BATCH_SIZE+1} : {embs.shape}")
+def save_index_and_metadata(index: faiss.Index, metadata: list[dict]) -> None:
+    FAISS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    faiss.write_index(index, str(FAISS_PATH))
+    print(f"💾 Index saved to {FAISS_PATH}")
+    METADATA_PATH.parent.mkdir(exist_ok=True)
+    with METADATA_PATH.open("w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+    print(f"💾 Metadata saved to {METADATA_PATH}")
 
-embeddings = np.vstack(all_embs).astype("float32")  # shape = (2074, 1024)
-print(f"✅ Tous les embeddings sont prêts : {embeddings.shape}")
+def test_search(client: Mistral, index: faiss.Index, metadata: list[dict], query: str, k: int = 5):
+    print(f"\n🔎 Test search for: “{query}”")
+    q_emb = embed_batch(client, [query])[0].astype("float32")
+    faiss.normalize_L2(q_emb.reshape(1, -1))
+    distances, indices = index.search(q_emb.reshape(1, -1), k)
+    for rank, idx in enumerate(indices[0]):
+        info = metadata[idx]
+        print(f"{rank+1}. uid={info['uid']}  score={distances[0][rank]:.4f}")
+        print(f"    Titre   : {info.get('title_fr')}")
+        print(f"    Dates   : {info.get('firstdate_begin')} → {info.get('firstdate_end')}")
+        print(f"    Adresse : {info.get('location_address')}")
+        print(f"    Ville   : {info.get('location_city')}\n")
 
-# 5 Normaliser pour similarité cosinus
-faiss.normalize_L2(embeddings)
+def main():
+    events      = load_cleaned_events(CLEAN_PATH)
+    descriptions = [e["description"] for e in events]
+    metadata    = [
+        {
+            "uid":              e["uid"],
+            "title_fr":         e.get("title_fr"),
+            "firstdate_begin":  e.get("firstdate_begin"),
+            "firstdate_end":    e.get("firstdate_end"),
+            "location_address": e.get("location_address"),
+            "location_city":    e.get("location_city"),
+        } 
+        for e in events
+    ]
 
-# 6 Créer et remplir l’index Faiss
-dimension = embeddings.shape[1]
-index = faiss.IndexFlatIP(dimension)
-index.add(embeddings)
-print(f"✔ Index Faiss créé avec {index.ntotal} vecteurs.")
+    client     = init_mistral_client(API_KEY)
+    embeddings = build_embeddings_array(client, descriptions)
+    print(f"✅ All embeddings ready: {embeddings.shape}")
 
-# 7 Sauvegarde de l’index et des métadonnées
-FAISS_PATH.parent.mkdir(parents=True, exist_ok=True)
-faiss.write_index(index, str(FAISS_PATH))
-print(f"💾 Index sauvegardé dans {FAISS_PATH}")
+    index = build_faiss_index(embeddings)
+    print(f"✔ Faiss index created with {index.ntotal} vectors")
 
-# On sauve aussi les UIDs pour retrouver l’événement d’origine
-meta = []
-for e in events:
-    meta.append({
-        "uid":                e["uid"],
-        "title_fr":           e.get("title_fr"),
-        "firstdate_begin":    e.get("firstdate_begin"),
-        "firstdate_end":      e.get("firstdate_end"),
-        "location_address":   e.get("location_address"),
-        "location_city":      e.get("location_city"),
-        "description_fr":     e.get("description_fr"),
-    })
+    save_index_and_metadata(index, metadata)
+    test_search(client, index, metadata, query="Musique Ukraine", k=5)
 
-with METADATA_PATH.open("w", encoding="utf-8") as f:
-    json.dump(meta, f, ensure_ascii=False, indent=2)
-print(f"💾 Métadonnées (uid, dates, lieu, titre, description) sauvegardées dans {METADATA_PATH}")
-
-# 1. Une requête de test
-test_query = "Musique Ukraine"
-print(f"\n🔎 Test search pour : « {test_query} »")
-
-# 2. Génération de l'embedding de la requête
-q_emb = embed_batch([test_query])[0].astype("float32")
-# 3. Normalisation pour similarité cosinus
-faiss.normalize_L2(q_emb.reshape(1, -1))
-
-# 4. Recherche des k plus proches voisins
-k = 5
-distances, indices = index.search(q_emb.reshape(1, -1), k)
-
-# 5. Affichage des résultats
-for rank, idx in enumerate(indices[0]):
-    info = meta[idx]
-    print(f"{rank+1}. uid={info['uid']}  score={distances[0][rank]:.4f}")
-    print(f"    titre   : {info['title_fr']}")
-    print(f"    dates   : {info['firstdate_begin']} → {info['firstdate_end']}")
-    print(f"    lieu    : {info['location_address']}")
-    print(f"    ville   : {info['location_city']}")
-    print(f"    snippet : {texts[idx][:200].replace('\\n',' ')}…\n")
+if __name__ == "__main__":
+    main()
