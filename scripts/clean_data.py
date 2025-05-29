@@ -1,105 +1,160 @@
-import os
-import json
-import time
+import pandas as pd
 from pathlib import Path
-import numpy as np
-import faiss
-from mistralai import Mistral
-from mistralai.models.sdkerror import SDKError
+from bs4 import BeautifulSoup
+import html
 
 # === Paramètres ===
-API_KEY       = os.getenv("MISTRAL_API_KEY")
-MODEL_NAME    = "mistral-embed"
-BATCH_SIZE    = 50
-CLEAN_PATH    = Path("data/events_clean.json")
-FAISS_PATH    = Path("data/faiss_index.idx")
-METADATA_PATH = Path("data/faiss_metadata.json")
 
-def load_cleaned_events(path: Path) -> list[dict]:
-    if not path.exists():
-        raise FileNotFoundError(f"{path} not found")
-    with path.open(encoding="utf-8") as f:
-        return json.load(f)
+INPUT_PATH  = Path("data/events_raw.json")
+OUTPUT_PATH = Path("data/events_clean.json")
+SELECT_COLUMNS = ["uid","title_fr","description","firstdate_begin","firstdate_end","location_address" ,"location_city"]
 
-def init_mistral_client(api_key: str) -> Mistral:
-    if not api_key:
-        raise RuntimeError("MISTRAL_API_KEY is missing")
-    return Mistral(api_key=api_key)
+# === Fonctions ===
 
-def embed_batch(client: Mistral, texts: list[str], max_retries: int = 5) -> np.ndarray:
-    for attempt in range(1, max_retries+1):
-        try:
-            resp = client.embeddings.create(model=MODEL_NAME, inputs=texts)
-            return np.array([d.embedding for d in resp.data], dtype="float32")
-        except SDKError as e:
-            if e.status_code == 429 and attempt < max_retries:
-                wait = 2 ** attempt
-                print(f"⚠️ Rate limit, retry #{attempt} after {wait}s")
-                time.sleep(wait)
-                continue
-            raise
-    raise RuntimeError("Failed to embed batch after retries")
+def load_data(path: Path) -> pd.DataFrame:
+    """
+    Charge le fichier JSON brut en DataFrame Pandas.
+    """
+    return pd.read_json(path)
 
-def build_embeddings_array(client: Mistral, descriptions: list[str]) -> np.ndarray:
-    all_embs = []
-    for i in range(0, len(descriptions), BATCH_SIZE):
-        batch = descriptions[i: i+BATCH_SIZE]
-        embs = embed_batch(client, batch)
-        print(f" → Batch {i//BATCH_SIZE+1}: {embs.shape}")
-        all_embs.append(embs)
-    return np.vstack(all_embs)
 
-def build_faiss_index(embeddings: np.ndarray) -> faiss.Index:
-    faiss.normalize_L2(embeddings)
-    dim = embeddings.shape[1]
-    index = faiss.IndexFlatIP(dim)
-    index.add(embeddings)
-    return index
+def drop_duplicates(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Supprime les lignes dupliquées sur la colonne 'uid', en gardant la première occurrence.
+    """
+    before = len(df)
+    df = df.drop_duplicates(subset="uid", keep="first")
+    after = len(df)
+    print(f"→ Suppression des doublons : {before - after} lignes supprimées")
+    return df
 
-def save_index_and_metadata(index: faiss.Index, metadata: list[dict]) -> None:
-    FAISS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    faiss.write_index(index, str(FAISS_PATH))
-    print(f"💾 Index saved to {FAISS_PATH}")
-    METADATA_PATH.parent.mkdir(exist_ok=True)
-    with METADATA_PATH.open("w", encoding="utf-8") as f:
-        json.dump(metadata, f, ensure_ascii=False, indent=2)
-    print(f"💾 Metadata saved to {METADATA_PATH}")
 
-def test_search(client: Mistral, index: faiss.Index, metadata: list[dict], query: str, k: int = 5):
-    print(f"\n🔎 Test search for: “{query}”")
-    q_emb = embed_batch(client, [query])[0].astype("float32")
-    faiss.normalize_L2(q_emb.reshape(1, -1))
-    distances, indices = index.search(q_emb.reshape(1, -1), k)
-    for rank, idx in enumerate(indices[0]):
-        info = metadata[idx]
-        print(f"{rank+1}. uid={info['uid']}  score={distances[0][rank]:.4f}")
-        print(f"    title: {info.get('title_fr')}")
-        print(f"    date:  {info.get('firstdate_begin')} → {info.get('firstdate_end')}")
-        print(f"    city:  {info.get('location_city')}\n")
+def drop_empty_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Supprime les colonnes entièrement vides (100% NaN).
+    """
+    before = df.shape[1]
+    df = df.dropna(axis=1, how="all")
+    after = df.shape[1]
+    print(f"→ Colonnes supprimées (100% NaN) : {before - after}")
+    return df
+
+
+def drop_missing_title_or_desc(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Supprime les entrées dont 'title_fr' OU 'description_fr' est manquant(e).
+    """
+    before = len(df)
+    df = df.dropna(subset=["title_fr", "description_fr"], how="any")
+    after = len(df)
+    print(f"→ Lignes supprimées (titre ou description manquants) : {before - after}")
+    return df
+
+def clean_html(raw: str) -> str:
+    """
+    Supprime les balises HTML et décode les entités,
+    puis contracte les espaces multiples.
+    """
+    # 1) Extraire le texte brut
+    text = BeautifulSoup(raw or "", "html.parser").get_text(separator=" ")
+    # 2) Décoder les entités HTML (&amp; → &)
+    text = html.unescape(text)
+    # 3) Écraser les multiples espaces / retours-ligne
+    return " ".join(text.split())
+
+def combine_descriptions(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Concatène title_fr, description_fr et longdescription_fr en un seul champ 'description',
+    puis nettoie le HTML.
+    """
+    def make_desc(row):
+        parts = []
+        # Titre
+        if pd.notna(row["title_fr"]):
+            parts.append(f"Titre : {row['title_fr']}")
+        # Résumé
+        if pd.notna(row["description_fr"]):
+            parts.append(f"Résumé : {row['description_fr']}")
+        # Détails
+        if pd.notna(row["longdescription_fr"]):
+            parts.append(f"Détails : {clean_html(row['longdescription_fr'])}")
+        # Concatène et nettoie le HTML dans chaque bloc
+        return "\n\n".join(parts)
+
+    df["description"] = df.apply(make_desc, axis=1)
+    print(f"→ Champ 'description' enrichi créé pour {len(df)} événements")
+    return df
+
+def select_columns(df: pd.DataFrame, cols) -> pd.DataFrame:
+    """
+    Ne garde que les colonnes listées.
+
+    Args:
+        df (DataFrame): DataFrame en entrée.
+        cols (list[str]): 
+            - liste de noms de colonnes à conserver
+    """
+    if isinstance(cols, (list, tuple)):
+        df = df[list(cols)]
+        print(f"→ Colonnes filtrées : {cols}")
+    else:
+        raise TypeError("SELECT_COLUMNS doit être une liste")
+    return df
+
+def format_dates(df: pd.DataFrame, date_cols: list[str]) -> pd.DataFrame:
+    """
+    Formate les colonnes datetime pour afficher 'YYYY-MM-DD HH:MM'.
+    
+    Args:
+        df (pd.DataFrame): DataFrame en entrée.
+        date_cols (list[str]): Liste des noms de colonnes datetime à formater.
+    
+    Returns:
+        pd.DataFrame: DataFrame avec les colonnes formatées.
+    """
+    for col in date_cols:
+        if col in df.columns:
+            # conversion en datetime (tolère les strings ISO)
+            df[col] = pd.to_datetime(df[col], utc=True, errors="coerce") \
+                        .dt.tz_localize(None) \
+                        .dt.strftime("%Y-%m-%d %H:%M")
+            print(f"→ Colonne '{col}' reformatée")
+    return df
+
+
+def save_data(df: pd.DataFrame, path: Path) -> None:
+    """
+    Sauvegarde le DataFrame en JSON indenté.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_json(path, orient="records", force_ascii=False, indent=2)
+    print(f"✔ Données nettoyées sauvegardées dans {path}")
+
+# === Exécution principale ===
 
 def main():
-    events      = load_cleaned_events(CLEAN_PATH)
-    descriptions = [e["description"] for e in events]
-    metadata    = [
-        {
-            "uid":             e["uid"],
-            "title_fr":        e.get("title_fr"),
-            "firstdate_begin": e.get("firstdate_begin"),
-            "firstdate_end":   e.get("firstdate_end"),
-            "location_city":   e.get("location_city"),
-        } 
-        for e in events
-    ]
+    # 1. Chargement
+    print(f"Chargement des données brutes depuis {INPUT_PATH} …")
+    df = load_data(INPUT_PATH)
 
-    client     = init_mistral_client(API_KEY)
-    embeddings = build_embeddings_array(client, descriptions)
-    print(f"✅ All embeddings ready: {embeddings.shape}")
+    # 2. Nettoyage
+    df = drop_duplicates(df)
+    df = drop_empty_columns(df)
+    df = drop_missing_title_or_desc(df)
+    df = combine_descriptions(df)
+    
+    # 3. Sélection de colonnes (optionnelle)
+    if SELECT_COLUMNS:
+        df = select_columns(df, SELECT_COLUMNS)
+        
+        # 3.bis. Formatage des dates si présentes
+        date_cols = [c for c in ["firstdate_begin", "firstdate_end"] if c in SELECT_COLUMNS]
+        if date_cols:
+            df = format_dates(df, date_cols)
 
-    index = build_faiss_index(embeddings)
-    print(f"✔ Faiss index created with {index.ntotal} vectors")
+    # 4. Sauvegarde
+    save_data(df, OUTPUT_PATH)
 
-    save_index_and_metadata(index, metadata)
-    test_search(client, index, metadata, query="Musique Ukraine", k=5)
 
 if __name__ == "__main__":
     main()
