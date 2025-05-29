@@ -89,10 +89,20 @@ faiss.write_index(index, str(FAISS_PATH))
 print(f"💾 Index sauvegardé dans {FAISS_PATH}")
 
 # On sauve aussi les UIDs pour retrouver l’événement d’origine
-meta = [{"uid": u} for u in uids]
+meta = []
+for e in events:
+    meta.append({
+        "uid":                e["uid"],
+        "title_fr":           e.get("title_fr"),
+        "firstdate_begin":    e.get("firstdate_begin"),
+        "firstdate_end":      e.get("firstdate_end"),
+        "location_city":      e.get("location_city"),
+        "description_fr":     e.get("description_fr"),
+    })
+
 with METADATA_PATH.open("w", encoding="utf-8") as f:
     json.dump(meta, f, ensure_ascii=False, indent=2)
-print(f"💾 Métadonnées sauvegardées dans {METADATA_PATH}")
+print(f"💾 Métadonnées (uid, dates, lieu, titre, description) sauvegardées dans {METADATA_PATH}")
 
 # 1. Une requête de test
 test_query = "Musique Ukraine"
@@ -109,8 +119,10 @@ distances, indices = index.search(q_emb.reshape(1, -1), k)
 
 # 5. Affichage des résultats
 for rank, idx in enumerate(indices[0]):
-    uid   = uids[idx]
-    score = distances[0][rank]
-    snippet = texts[idx][:60].replace("\n", " ")
-    print(f"{rank+1}. uid={uid}  score={score:.4f}  text=\"{snippet}…\"")
+    info = meta[idx]
+    print(f"{rank+1}. uid={info['uid']}  score={distances[0][rank]:.4f}")
+    print(f"    titre   : {info['title_fr']}")
+    print(f"    dates   : {info['firstdate_begin']} → {info['firstdate_end']}")
+    print(f"    lieu    : {info['location_city']}")
+    print(f"    snippet : {texts[idx][:60].replace('\\n',' ')}…\n")
 
