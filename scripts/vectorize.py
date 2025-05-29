@@ -124,6 +124,6 @@ for rank, idx in enumerate(indices[0]):
     print(f"{rank+1}. uid={info['uid']}  score={distances[0][rank]:.4f}")
     print(f"    titre   : {info['title_fr']}")
     print(f"    dates   : {info['firstdate_begin']} → {info['firstdate_end']}")
-    print(f"    lieu    : {info['location_adress']}")
+    print(f"    lieu    : {info['location_address']}")
     print(f"    ville   : {info['location_city']}")
     print(f"    snippet : {texts[idx][:200].replace('\\n',' ')}…\n")
