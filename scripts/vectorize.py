@@ -22,17 +22,32 @@ METADATA_PATH  = Path("data/faiss_metadata.json")
 # === Fonctions ===
 
 def load_cleaned_events(path: Path) -> list[dict]:
+    """
+    Charge les événements nettoyés depuis un fichier JSON.
+    """
     if not path.exists():
         raise FileNotFoundError(f"{path} not found")
     with path.open(encoding="utf-8") as f:
         return json.load(f)
 
 def init_mistral_client(api_key: str) -> Mistral:
+    """
+    Initialise le client Mistral pour la génération d'embeddings.
+    """
     if not api_key:
         raise RuntimeError("MISTRAL_API_KEY is missing")
     return Mistral(api_key=api_key)
 
 def embed_batch(client: Mistral, texts: list[str], max_retries: int = 5) -> np.ndarray:
+    """
+    Génère les embeddings pour un lot de textes via l'API Mistral, avec retry en cas de rate limit.
+    Args:
+        client (Mistral): Client Mistral configuré.
+        texts (list[str]): Liste de textes à vectoriser.
+        max_retries (int): Nombre maximal de tentatives en cas de 429.
+    Returns:
+        np.ndarray: Tableau d'embeddings de forme (len(texts), dim).
+    """
     for attempt in range(1, max_retries+1):
         try:
             resp = client.embeddings.create(model=MODEL_NAME, inputs=texts)
@@ -48,9 +63,14 @@ def embed_batch(client: Mistral, texts: list[str], max_retries: int = 5) -> np.n
 
 def chunk_events(events: list[dict]) -> tuple[list[str], list[dict]]:
     """
-    Découpe chaque description en chunks et renvoie
-    - all_chunks : liste de textes
-    - chunk_meta : liste de métadonnées alignées
+    Découpe chaque description d'événement en chunks de taille fixe avec chevauchement.
+    Args:
+        events (list[dict]): Liste d'événements nettoyés.
+    Returns:
+        tuple:
+            - all_chunks (list[str]): Tous les morceaux de texte.
+            - chunk_meta (list[dict]): Métadonnées associées à chaque chunk
+               (uid, chunk_id, texte, titre, dates, lieu, etc.).
     """
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
@@ -79,6 +99,14 @@ def chunk_events(events: list[dict]) -> tuple[list[str], list[dict]]:
     return all_chunks, chunk_meta
 
 def build_embeddings_array(client: Mistral, chunks: list[str]) -> np.ndarray:
+    """
+    Génère les embeddings pour tous les chunks par lots.
+    Args:
+        client (Mistral): Client Mistral configuré.
+        chunks (list[str]): Liste de textes chunkés.
+    Returns:
+        np.ndarray: Matrice d'embeddings de forme (n_chunks, dim).
+    """
     all_embs = []
     for i in range(0, len(chunks), BATCH_SIZE):
         batch = chunks[i: i+BATCH_SIZE]
@@ -88,6 +116,13 @@ def build_embeddings_array(client: Mistral, chunks: list[str]) -> np.ndarray:
     return np.vstack(all_embs)
 
 def build_faiss_index(embeddings: np.ndarray) -> faiss.Index:
+    """
+    Construit un index Faiss pour la recherche par similarité cosinus.
+    Args:
+        embeddings (np.ndarray): Matrice d'embeddings normalisés ou non.
+    Returns:
+        faiss.Index: Index FlatIP prêt pour la recherche.
+    """
     faiss.normalize_L2(embeddings)
     dim = embeddings.shape[1]
     index = faiss.IndexFlatIP(dim)
@@ -95,6 +130,12 @@ def build_faiss_index(embeddings: np.ndarray) -> faiss.Index:
     return index
 
 def save_index_and_metadata(index: faiss.Index, metadata: list[dict]) -> None:
+    """
+    Sauvegarde l'index Faiss et les métadonnées associées sur le disque.
+    Args:
+        index (faiss.Index): Index Faiss à sauvegarder.
+        metadata (list[dict]): Liste des métadonnées alignées avec l'index.
+    """
     FAISS_PATH.parent.mkdir(parents=True, exist_ok=True)
     faiss.write_index(index, str(FAISS_PATH))
     print(f"💾 Index saved to {FAISS_PATH}")
@@ -106,6 +147,9 @@ def save_index_and_metadata(index: faiss.Index, metadata: list[dict]) -> None:
 # === Exécution principale ===
 
 def main():
+    """
+    Pipeline complet : chargement des événements, chunking, embeddings, indexation et sauvegarde.
+    """
     events = load_cleaned_events(CLEAN_PATH)
     client = init_mistral_client(API_KEY)
     # 1) chunking
