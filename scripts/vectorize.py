@@ -72,11 +72,13 @@ def test_search(client: Mistral, index: faiss.Index, metadata: list[dict], query
     distances, indices = index.search(q_emb.reshape(1, -1), k)
     for rank, idx in enumerate(indices[0]):
         info = metadata[idx]
+        snippet = info.get("description", "")
         print(f"{rank+1}. uid={info['uid']}  score={distances[0][rank]:.4f}")
         print(f"    Titre   : {info.get('title_fr')}")
         print(f"    Dates   : {info.get('firstdate_begin')} → {info.get('firstdate_end')}")
         print(f"    Adresse : {info.get('location_address')}")
-        print(f"    Ville   : {info.get('location_city')}\n")
+        print(f"    Ville   : {info.get('location_city')}")
+        print(f"    Snippet : {snippet[:200]}…\n")
 
 def main():
     events      = load_cleaned_events(CLEAN_PATH)
@@ -89,6 +91,7 @@ def main():
             "firstdate_end":    e.get("firstdate_end"),
             "location_address": e.get("location_address"),
             "location_city":    e.get("location_city"),
+            "description":      e.get("description"),
         } 
         for e in events
     ]
