@@ -103,20 +103,6 @@ def save_index_and_metadata(index: faiss.Index, metadata: list[dict]) -> None:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
     print(f"💾 Metadata saved to {METADATA_PATH}")
 
-def test_search(client: Mistral, index: faiss.Index, metadata: list[dict], query: str, k: int = 5):
-    print(f"\n🔎 Test search for: “{query}”")
-    q_emb = embed_batch(client, [query])[0]
-    faiss.normalize_L2(q_emb.reshape(1, -1))
-    distances, indices = index.search(q_emb.reshape(1, -1), k)
-    for rank, idx in enumerate(indices[0]):
-        m = metadata[idx]
-        snippet = m["text"][:200]
-        print(f"{rank+1}. uid={m['uid']} chunk={m['chunk_id']}  score={distances[0][rank]:.4f}")
-        print(f"    Title : {m['title_fr']}")
-        print(f"    Dates : {m['firstdate_begin']} → {m['firstdate_end']}")
-        print(f"    Location: {m['location_address']}, {m['location_city']}")
-        print(f"    Snippet : {snippet}…\n")
-
 # === Exécution principale ===
 
 def main():
@@ -132,8 +118,6 @@ def main():
     print(f"✔ Faiss index created with {index.ntotal} vectors")
     # 4) save
     save_index_and_metadata(index, chunk_meta)
-    # 5) test search
-    test_search(client, index, chunk_meta, query="Musique Ukraine", k=5)
 
 if __name__ == "__main__":
     main()
