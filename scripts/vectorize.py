@@ -6,14 +6,20 @@ import numpy as np
 import faiss
 from mistralai import Mistral
 from mistralai.models.sdkerror import SDKError
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 # === Paramètres ===
-API_KEY       = os.getenv("MISTRAL_API_KEY")
-MODEL_NAME    = "mistral-embed"
-BATCH_SIZE    = 50
-CLEAN_PATH    = Path("data/events_clean.json")
-FAISS_PATH    = Path("data/faiss_index.idx")
-METADATA_PATH = Path("data/faiss_metadata.json")
+
+API_KEY        = os.getenv("MISTRAL_API_KEY")
+MODEL_NAME     = "mistral-embed"
+BATCH_SIZE     = 50
+CHUNK_SIZE     = 1000
+CHUNK_OVERLAP  = 200
+CLEAN_PATH     = Path("data/events_clean.json")
+FAISS_PATH     = Path("data/faiss_index.idx")
+METADATA_PATH  = Path("data/faiss_metadata.json")
+
+# === Fonctions ===
 
 def load_cleaned_events(path: Path) -> list[dict]:
     if not path.exists():
@@ -40,10 +46,42 @@ def embed_batch(client: Mistral, texts: list[str], max_retries: int = 5) -> np.n
             raise
     raise RuntimeError("Failed to embed batch after retries")
 
-def build_embeddings_array(client: Mistral, descriptions: list[str]) -> np.ndarray:
+def chunk_events(events: list[dict]) -> tuple[list[str], list[dict]]:
+    """
+    Découpe chaque description en chunks et renvoie
+    - all_chunks : liste de textes
+    - chunk_meta : liste de métadonnées alignées
+    """
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        length_function=len
+    )
+    all_chunks, chunk_meta = [], []
+    for ev in events:
+        text = ev.get("description", "")
+        # split_text renvoie une liste de strings
+        chunks = splitter.split_text(text)
+        for i, chunk in enumerate(chunks):
+            all_chunks.append(chunk)
+            # on conserve uid + contexte d'origine
+            chunk_meta.append({
+                "uid":               ev["uid"],
+                "chunk_id":          i,
+                "text":              chunk,
+                "title_fr":          ev.get("title_fr"),
+                "firstdate_begin":   ev.get("firstdate_begin"),
+                "firstdate_end":     ev.get("firstdate_end"),
+                "location_address":  ev.get("location_address"),
+                "location_city":     ev.get("location_city"),
+            })
+    print(f"→ {len(events)} événements découpés en {len(all_chunks)} chunks")
+    return all_chunks, chunk_meta
+
+def build_embeddings_array(client: Mistral, chunks: list[str]) -> np.ndarray:
     all_embs = []
-    for i in range(0, len(descriptions), BATCH_SIZE):
-        batch = descriptions[i: i+BATCH_SIZE]
+    for i in range(0, len(chunks), BATCH_SIZE):
+        batch = chunks[i: i+BATCH_SIZE]
         embs = embed_batch(client, batch)
         print(f" → Batch {i//BATCH_SIZE+1}: {embs.shape}")
         all_embs.append(embs)
@@ -67,44 +105,35 @@ def save_index_and_metadata(index: faiss.Index, metadata: list[dict]) -> None:
 
 def test_search(client: Mistral, index: faiss.Index, metadata: list[dict], query: str, k: int = 5):
     print(f"\n🔎 Test search for: “{query}”")
-    q_emb = embed_batch(client, [query])[0].astype("float32")
+    q_emb = embed_batch(client, [query])[0]
     faiss.normalize_L2(q_emb.reshape(1, -1))
     distances, indices = index.search(q_emb.reshape(1, -1), k)
     for rank, idx in enumerate(indices[0]):
-        info = metadata[idx]
-        snippet = info.get("description", "")
-        print(f"{rank+1}. uid={info['uid']}  score={distances[0][rank]:.4f}")
-        print(f"    Titre   : {info.get('title_fr')}")
-        print(f"    Dates   : {info.get('firstdate_begin')} → {info.get('firstdate_end')}")
-        print(f"    Adresse : {info.get('location_address')}")
-        print(f"    Ville   : {info.get('location_city')}")
-        print(f"    Snippet : {snippet[:200]}…\n")
+        m = metadata[idx]
+        snippet = m["text"][:200]
+        print(f"{rank+1}. uid={m['uid']} chunk={m['chunk_id']}  score={distances[0][rank]:.4f}")
+        print(f"    Title : {m['title_fr']}")
+        print(f"    Dates : {m['firstdate_begin']} → {m['firstdate_end']}")
+        print(f"    Location: {m['location_address']}, {m['location_city']}")
+        print(f"    Snippet : {snippet}…\n")
+
+# === Exécution principale ===
 
 def main():
-    events      = load_cleaned_events(CLEAN_PATH)
-    descriptions = [e["description"] for e in events]
-    metadata    = [
-        {
-            "uid":              e["uid"],
-            "title_fr":         e.get("title_fr"),
-            "firstdate_begin":  e.get("firstdate_begin"),
-            "firstdate_end":    e.get("firstdate_end"),
-            "location_address": e.get("location_address"),
-            "location_city":    e.get("location_city"),
-            "description":      e.get("description"),
-        } 
-        for e in events
-    ]
-
-    client     = init_mistral_client(API_KEY)
-    embeddings = build_embeddings_array(client, descriptions)
+    events = load_cleaned_events(CLEAN_PATH)
+    client = init_mistral_client(API_KEY)
+    # 1) chunking
+    chunks, chunk_meta = chunk_events(events)
+    # 2) embeddings
+    embeddings = build_embeddings_array(client, chunks)
     print(f"✅ All embeddings ready: {embeddings.shape}")
-
+    # 3) index Faiss
     index = build_faiss_index(embeddings)
     print(f"✔ Faiss index created with {index.ntotal} vectors")
-
-    save_index_and_metadata(index, metadata)
-    test_search(client, index, metadata, query="Musique Ukraine", k=5)
+    # 4) save
+    save_index_and_metadata(index, chunk_meta)
+    # 5) test search
+    test_search(client, index, chunk_meta, query="Musique Ukraine", k=5)
 
 if __name__ == "__main__":
     main()
