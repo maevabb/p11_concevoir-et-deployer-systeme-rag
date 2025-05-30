@@ -1,14 +1,19 @@
+import logging
 import requests
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
 
+# === Configuration du logging ===
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s — %(levelname)s — %(message)s")
+
 # === Paramètres ===
 BASE_URL = "https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/evenements-publics-openagenda"
-OUTPUT_PATH = "data/events_raw.json"
+OUTPUT_PATH = Path("data/events_raw.json")
 
 CITY = "Paris"
-
 START_DATE = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
 END_DATE = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -21,7 +26,7 @@ def fetch_openagenda_events(base_url: str,
                             offset: int = 0, 
                             start_date: str | None = None, 
                             end_date: str | None = None, 
-                            city: str | None = None):
+                            city: str | None = None) -> tuple[list[dict], int]:
     """
     Récupère des événements depuis l'API OpenAgenda (/exports/{format}),
     avec filtres optionnels sur la plage de dates et la ville.
@@ -58,16 +63,24 @@ def fetch_openagenda_events(base_url: str,
 
     # Appel à l’export
     url = f"{base_url}/exports/{export_format}"
+    logging.info("Envoi de la requête GET à %s avec params=%s", url, params)
     response = requests.get(url, params=params)
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as e:
+        logging.error("Erreur HTTP %s lors de la récupération des événements", e)
+        raise
 
     data = response.json()
     if isinstance(data, list):
         events = data
         total = len(data)
+        logging.info("Réponse reçue sous forme de liste (%d événements)", total)
     else:
         events = data.get("results", [])
         total = data.get("total_count", len(events))
+        logging.info(
+            "Réponse reçue sous forme dict — total_count=%d, résultats renvoyés=%d", total, len(events))
 
     return events, total
 
@@ -84,16 +97,24 @@ def save_raw_events(events: list, output_path: str = "data/events_raw.json") -> 
     out_dir.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(events, f, ensure_ascii=False, indent=2)
-    print(f"📁 Données brutes sauvegardées dans {output_path}")
+    logging.info("Données brutes sauvegardées dans %s", output_path)
 
 # === Exécution principale ===
 if __name__ == "__main__":
-    print(f"➡️ Chargement des événements pour {CITY} entre {START_DATE} et {END_DATE}")
+    logging.info(
+        "➡️ Chargement des événements pour %s entre %s et %s", CITY, START_DATE, END_DATE)
     events, total = fetch_openagenda_events(BASE_URL, EXPORT_FORMAT, -1, 0, START_DATE, END_DATE, CITY)  
     save_raw_events(events, OUTPUT_PATH)
 
-    with open(OUTPUT_PATH, encoding="utf-8") as f:
-        loaded = json.load(f)
-    count = len(loaded) if isinstance(loaded, list) else 0
-
-    print(f"📊 Nombre d'événements dans le fichier : {count} (total attendu : {total})")
+    # Vérification
+    try:
+        loaded = json.loads(OUTPUT_PATH.read_text(encoding="utf-8"))
+        count = len(loaded) if isinstance(loaded, list) else 0
+        if count != total:
+            logging.error(
+                "Mismatch events count: saved=%d but API returned total=%d", count, total)
+        else:
+            logging.info(
+                "📊 Nombre d'événements dans le fichier : %d (total attendu : %d)",count,total)
+    except Exception as e:
+        logging.error("Impossible de relire %s : %s", OUTPUT_PATH, e)

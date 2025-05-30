@@ -1,7 +1,14 @@
+import logging
 import pandas as pd
 from pathlib import Path
 from bs4 import BeautifulSoup
 import html
+
+# === Configuration du logging ===
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 # === Paramètres ===
 
@@ -15,7 +22,10 @@ def load_data(path: Path) -> pd.DataFrame:
     """
     Charge le fichier JSON brut en DataFrame Pandas.
     """
-    return pd.read_json(path)
+    logging.info(f"Chargement des données brutes depuis {path}…")
+    df = pd.read_json(path)
+    logging.info(f"{len(df)} enregistrements chargés.")
+    return df
 
 
 def drop_duplicates(df: pd.DataFrame) -> pd.DataFrame:
@@ -24,8 +34,8 @@ def drop_duplicates(df: pd.DataFrame) -> pd.DataFrame:
     """
     before = len(df)
     df = df.drop_duplicates(subset="uid", keep="first")
-    after = len(df)
-    print(f"→ Suppression des doublons : {before - after} lignes supprimées")
+    removed = before - len(df)
+    logging.info(f"Suppression des doublons : {removed} lignes supprimées.")
     return df
 
 
@@ -35,8 +45,8 @@ def drop_empty_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     before = df.shape[1]
     df = df.dropna(axis=1, how="all")
-    after = df.shape[1]
-    print(f"→ Colonnes supprimées (100% NaN) : {before - after}")
+    removed = before - df.shape[1]
+    logging.info(f"Colonnes supprimées (100% NaN) : {removed}.")
     return df
 
 
@@ -46,8 +56,8 @@ def drop_missing_title_or_desc(df: pd.DataFrame) -> pd.DataFrame:
     """
     before = len(df)
     df = df.dropna(subset=["title_fr", "description_fr"], how="any")
-    after = len(df)
-    print(f"→ Lignes supprimées (titre ou description manquants) : {before - after}")
+    removed = before - len(df)
+    logging.info(f"Lignes supprimées (titre ou description manquants) : {removed}.")
     return df
 
 def clean_html(raw: str) -> str:
@@ -82,43 +92,31 @@ def combine_descriptions(df: pd.DataFrame) -> pd.DataFrame:
         return "\n\n".join(parts)
 
     df["description"] = df.apply(make_desc, axis=1)
-    print(f"→ Champ 'description' enrichi créé pour {len(df)} événements")
+    logging.info(f"Champ 'description' créé pour {len(df)} événements.")
     return df
 
 def select_columns(df: pd.DataFrame, cols) -> pd.DataFrame:
     """
     Ne garde que les colonnes listées.
-
-    Args:
-        df (DataFrame): DataFrame en entrée.
-        cols (list[str]): 
-            - liste de noms de colonnes à conserver
     """
-    if isinstance(cols, (list, tuple)):
-        df = df[list(cols)]
-        print(f"→ Colonnes filtrées : {cols}")
-    else:
-        raise TypeError("SELECT_COLUMNS doit être une liste")
+    if not isinstance(cols, (list, tuple)):
+        raise TypeError("SELECT_COLUMNS doit être une liste ou un tuple")
+    df = df[list(cols)]
+    logging.info(f"Colonnes conservées : {cols}")
     return df
 
 def format_dates(df: pd.DataFrame, date_cols: list[str]) -> pd.DataFrame:
     """
     Formate les colonnes datetime pour afficher 'YYYY-MM-DD HH:MM'.
-    
-    Args:
-        df (pd.DataFrame): DataFrame en entrée.
-        date_cols (list[str]): Liste des noms de colonnes datetime à formater.
-    
-    Returns:
-        pd.DataFrame: DataFrame avec les colonnes formatées.
     """
     for col in date_cols:
         if col in df.columns:
-            # conversion en datetime (tolère les strings ISO)
-            df[col] = pd.to_datetime(df[col], utc=True, errors="coerce") \
-                        .dt.tz_localize(None) \
-                        .dt.strftime("%Y-%m-%d %H:%M")
-            print(f"→ Colonne '{col}' reformatée")
+            df[col] = (
+                pd.to_datetime(df[col], utc=True, errors="coerce")
+                .dt.tz_localize(None)
+                .dt.strftime("%Y-%m-%d %H:%M")
+            )
+            logging.info(f"Colonne '{col}' reformatée.")
     return df
 
 
@@ -128,7 +126,7 @@ def save_data(df: pd.DataFrame, path: Path) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_json(path, orient="records", force_ascii=False, indent=2)
-    print(f"✔ Données nettoyées sauvegardées dans {path}")
+    logging.info(f"✔ Données nettoyées sauvegardées dans {path}")
 
 # === Exécution principale ===
 
