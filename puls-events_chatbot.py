@@ -65,7 +65,7 @@ def load_metadata(path: Path) -> list[dict]:
     logging.info("%d entrées de métadonnées chargées.", len(metadata))
     return metadata
 
-# On charge l’index et les métadonnées une seule fois au démarrage
+# On charge l'index et les métadonnées une seule fois au démarrage
 faiss_index   = load_index(FAISS_INDEX_PATH)
 faiss_metadata = load_metadata(FAISS_METADATA_PATH)
 
@@ -112,7 +112,7 @@ def retrieve_top_k_chunks(query: str, k: int = TOP_K_CHUNKS) -> list[dict]:
             continue
         meta = faiss_metadata[idx]
         results.append({
-            "uid": idx,  # ou meta["uid"] si l’index sur UID diffère
+            "uid": idx,  # ou meta["uid"] si l'index sur UID diffère
             "chunk_id": meta.get("chunk_id"),
             "text": meta.get("text", ""),
             "title_fr": meta.get("title_fr"),
@@ -125,7 +125,7 @@ def retrieve_top_k_chunks(query: str, k: int = TOP_K_CHUNKS) -> list[dict]:
     return results
 
 
-# === INITIALISATION DE L’HISTORIQUE DE CONVERSATION (SESSION STATE) ===
+# === INITIALISATION DE L'HISTORIQUE DE CONVERSATION (SESSION STATE) ===
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {
@@ -147,72 +147,143 @@ def construire_prompt_session(max_messages: int = 10) -> list[dict]:
     return [{"role": msg["role"], "content": msg["content"]} for msg in recent]
 
 # === GÉNÉRATION DE LA RÉPONSE AVEC CONTEXTE RAG ===
+def construire_system_message_rag(user_query: str, top_chunks: list[dict]) -> dict:
+    """
+    Construit le 'system_message' complet en respectant les recommandations Puls-EventsBot.
+    - user_query : la question de l'utilisateur.
+    - top_chunks : liste des k meilleurs chunks renvoyés par FAISS, chacun contenant 'text', 'distance', 'title_fr', 'firstdate_begin', 'firstdate_end', 'location_address', 'location_city', etc.
+    """
+
+    # 1) On prépare le contexte issu de FAISS (les passages/chunks)
+    if not top_chunks:
+        context_text = "Aucun contexte pertinent trouvé dans la base d'événements."
+    else:
+        fragments = []
+        for i, chunk in enumerate(top_chunks, start=1):
+            fragment = (
+                f"--- Contexte {i} (score FAISS={chunk['distance']:.3f}) ---\n"
+                f"{chunk['text']}"
+            )
+            fragments.append(fragment)
+        context_text = "\n\n".join(fragments)
+
+    # 2) On rédige le prompt système en respectant toutes les consignes
+    system_content = f"""
+Vous êtes Puls-EventsBot, un assistant virtuel spécialisé dans la recommandation d'événements culturels en temps réel.
+
+RÔLE DE L'ASSISTANT
+• Identité : Puls-EventsBot, expert en événements culturels (concerts, expositions, festivals, spectacles, etc.) collectés via Open Agenda.
+• Autorité : Vous êtes habilité à fournir uniquement des renseignements factuels sur les événements indexés (titre, date, lieu, bref descriptif),
+  et à proposer des suggestions personnalisées en fonction des critères de l'utilisateur (ville, période, type d'événement).
+• Périmètre :
+  - Recommandations d'événements situés dans la zone géographique couverte (par exemple : Paris et sa région), datant de moins d'un an.
+  - Consultation de la base Faiss pour récupérer des « passages » (chunks) extraits des descriptions d'événements.
+  - Génération de réponses exclusivement à partir des passages retournés par l'index Faiss.
+
+SOURCES D'INFORMATION AUTORISÉES
+1. Base vectorielle FAISS :
+   - Chaque requête utilisateur génère un embedding via Mistral, taggué pour similarité.
+   - Les « chunks » obtenus sont des segments textuels extraits de la colonne description (titre + résumé + détails nettoyés) des événements Open Agenda.
+   - Les métadonnées associées (uid, titre, date, lieu) sont stockées au format JSON.
+2. Modèle Mistral (mistral-embed + mistral-chat) :
+   - Utilisé pour transformer les textes en vecteurs et pour formuler les réponses finales.
+   - Lors de la génération, vous devez impérativement vous appuyer seulement sur le contenu des passages fournis par Faiss.
+
+Vous ne devez PAS :
+• Inventer d'événements, de dates ou de lieux qui ne figurent pas dans la base.
+• Citer une source non indexée ou lier vers un site extérieur.
+• Fournir des informations promotionnelles sur des événements non présents dans notre base.
+
+COMPORTEMENTS OBLIGATOIRES
+1. Mode de réponse :
+   - Réponse factuelle et concise : chaque événement présenté doit comporter au minimum son titre, sa date, son lieu, et un court descriptif (extrait du chunk).
+   - Si plusieurs événements correspondent, classez-les par ordre de pertinence (score FAISS décroissant).
+   - Proposez au moins 3 à 5 suggestions lorsque la requête est suffisamment précise.
+   - Si l'utilisateur précise un filtre (ex. « concert jazz à Lyon »), ne renvoyez que des événements répondant exactement à ces critères.
+2. Gestion des ambiguïtés :
+   - Si la requête est trop vague (ex. « Je veux aller à un spectacle »), demandez une précision (type d'événement, localisation, période).
+     Exemple : « Pouvez-vous préciser si vous cherchez un concert, une pièce de théâtre ou une exposition, et dans quelle ville ou période ? »
+3. En cas d'absence de résultat :
+   - Si aucune entrée pertinente n'existe dans la base vectorielle, informez clairement l'utilisateur :
+     « Désolé, je n'ai pas trouvé d'événement correspondant à cette recherche. Voulez-vous élargir la période ou changer de type d'événement ? »
+   - Proposez toujours une alternative (ex. « Vous pourriez consulter notre page d'accueil pour découvrir tous les événements du mois » ou
+     « Élargissez votre recherche à une autre ville »).
+4. Structure de la réponse :
+   - Introduction courte et polie (ex. « Bonjour ! Voici ce que j'ai trouvé pour … »).
+   - Liste numérotée ou à puces des événements :
+       1. Titre : …
+       2. Date : …
+       3. Lieu : …
+       4. Descriptif : …
+   - Conclusion avec invite ou suggestion (ex. « Si vous souhaitez d'autres recommandations, n'hésitez pas à préciser vos critères »).
+5. Ton et style :
+   - Chaleureux mais professionnel : langue accessible à tous, sans jargon technique.
+   - Courtois et aidant : montrez-vous patient·e et encourageant·e.
+
+COMPORTEMENTS INTERDITS
+• Ne jamais halluciner :
+  - N'ajoutez pas de détails (prix, réservation, playlist, etc.) qui ne proviennent pas explicitement du chunk retourné.
+  - Si vous n'êtes pas certain d'un élément mentionnez « information non disponible dans nos données actuelles ».
+• Ne pas dépasser le périmètre des événements culturels :
+  - Interrogez uniquement la base Faiss d'événements indexés.
+  - Évitez toute recommandation de services extérieurs (restaurants, parkings, etc.), sauf si l'utilisateur le demande explicitement.
+• Ne pas communiquer de données privées :
+  - N'incluez jamais d'informations personnelles ou sensibles (numéros de téléphone, adresse mail, données personnelles des organisateurs).
+"""
+
+    return {"role": "system", "content": system_content}
+
+
+# Exemple d'utilisation dans votre fonction generer_reponse_rag :
 def generer_reponse_rag(user_query: str) -> str:
     """
     1. Récupère les top K chunks pertinents depuis FAISS.
-    2. Construit un « system prompt » contenant les passages récupérés.
+    2. Construit le system_message complet contenant les passages récupérés.
     3. Rajoute l'historique des messages ainsi que la requête utilisateur.
     4. Appelle Mistral en mode chat pour générer la réponse.
     """
     # 1) Récupération des chunks FAISS
     top_chunks = retrieve_top_k_chunks(user_query, k=TOP_K_CHUNKS)
-    if not top_chunks:
-        context_text = "Aucun contexte pertinent trouvé dans la base d'événements."
-        logging.warning("Aucun chunk FAISS pertinent pour la requête : «%s»", user_query)
-    else:
-        # On combine simplement le texte de chaque chunk, en introduisant des séparateurs
-        context_pieces = []
-        for i, chunk in enumerate(top_chunks, start=1):
-            piece = (
-                f"--- Contexte {i} (score={chunk['distance']:.3f}) ---\n"
-                f"{chunk['text']}"
-            )
-            context_pieces.append(piece)
-        context_text = "\n\n".join(context_pieces)
 
-    # 2) On construit le message système RAG
-    system_content = (
-        "Vous êtes un assistant spécialisé dans la recommandation d'événements culturels. "
-        "Utilisez STRICTEMENT les extraits ci-dessous (issus de la base de données d'événements) "
-        "pour répondre à la question suivante : « " + user_query + " »\n\n"
-        "INFORMATIONS RETROUVÉES :\n"
-        f"{context_text}\n\n"
-        "Si l'information demandée n'est pas présente dans ces extraits, répondez honnêtement que vous ne la connaissez pas."
-    )
+    # 2) Construction du system_message avec contexte + recommandations
+    system_message = construire_system_message_rag(user_query, top_chunks)
 
-    system_message = {"role": "system", "content": system_content}
-    logging.info("Message système RAG construit (longueur=%d).", len(system_content))
-
-    # 3) On assemble la conversation complète pour l’appel chat
+    # 3) On assemble la conversation complète pour l'appel chat :
+    #    - Le system_message en tête
+    #    - Les derniers messages de l'historique (pour garder le fil de la session)
     prompt_history = construire_prompt_session()
-    # On place le message système en tête, puis l’historique
     full_prompt = [system_message] + prompt_history
 
     # 4) On appelle Mistral pour générer la réponse
     try:
         response = client.chat.complete(
             model=MODEL_NAME,
-            messages=full_prompt
+            messages=full_prompt,
+            # Paramètres techniques :
+            temperature=0.2,
+            top_p=0.9,
+            max_tokens=300
         )
         answer = response.choices[0].message.content
         logging.info("Réponse générée par Mistral (longueur=%d).", len(answer))
         return answer
 
     except Exception as e:
-        logging.error("Erreur lors de l’appel à Mistral Chat : %s", e)
+        logging.error("Erreur lors de l'appel à Mistral Chat : %s", e)
         return "Désolé, une erreur interne est survenue. Veuillez réessayer."
-    
+
+  
 
 # === INTERFACE STREAMLIT ===
 
-# 1) Afficher tout l’historique (chat bubbles)
+# 1) Afficher tout l'historique (chat bubbles)
 for message in st.session_state["messages"]:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
-# 2) Gérer la saisie de l’utilisateur
+# 2) Gérer la saisie de l'utilisateur
 if user_input := st.chat_input("Comment puis-je vous aider ?"):
-    # a) On mémorise d’abord la question de l’utilisateur
+    # a) On mémorise d'abord la question de l'utilisateur
     st.session_state["messages"].append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.write(user_input)
@@ -225,8 +296,8 @@ if user_input := st.chat_input("Comment puis-je vous aider ?"):
         # c) On génère la réponse RAG
         answer = generer_reponse_rag(user_input)
 
-        # d) On remplace l’indicateur par la réponse finale
+        # d) On remplace l'indicateur par la réponse finale
         placeholder.write(answer)
 
-    # e) On ajoute la réponse à l’historique
+    # e) On ajoute la réponse à l'historique
     st.session_state["messages"].append({"role": "assistant", "content": answer})
