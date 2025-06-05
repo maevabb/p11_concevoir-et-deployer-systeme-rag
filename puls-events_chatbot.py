@@ -100,7 +100,8 @@ def retrieve_top_k_chunks(query: str, k: int = TOP_K_CHUNKS) -> list[dict]:
     """
     1. Embed la requête utilisateur.
     2. Recherche dans l'index Faiss les k vecteurs les plus similaires.
-    3. Retourne la liste des métadonnées correspondantes (top k) pour construire le contexte.
+    3. Retourne la liste des métadonnées correspondantes (top k) pour construire le contexte,
+       en loggant chaque résultat pour vérification.
     """
     q_emb = embed_query(client, query)
     distances, indices = faiss_index.search(q_emb.reshape(1, -1), k)
@@ -110,17 +111,29 @@ def retrieve_top_k_chunks(query: str, k: int = TOP_K_CHUNKS) -> list[dict]:
     for rank, idx in enumerate(indices[0]):
         if idx < 0 or idx >= len(faiss_metadata):
             continue
-        meta = faiss_metadata[idx]
+        m = faiss_metadata[idx]
+
+        # On logge ici les informations de chaque chunk retourné
+        snippet = m.get("text", "").replace("\n", " ")[:100]  # On limite à 100 caractères pour le log
+        logging.info(
+            "%d. uid=%s chunk=%d score=%.4f",
+            rank+1, m["uid"], m["chunk_id"], float(distances[0][rank])
+        )
+        logging.info("    Titre  : %s", m.get('title_fr'))
+        logging.info("    Dates  : %s → %s", m.get('firstdate_begin'), m.get('firstdate_end'))
+        logging.info("    Lieu   : %s, %s", m.get('location_address'), m.get('location_city'))
+        logging.info("    Extrait: %s…", snippet)
+
         results.append({
-            "uid": idx,  # ou meta["uid"] si l'index sur UID diffère
-            "chunk_id": meta.get("chunk_id"),
-            "text": meta.get("text", ""),
-            "title_fr": meta.get("title_fr"),
-            "firstdate_begin": meta.get("firstdate_begin"),
-            "firstdate_end": meta.get("firstdate_end"),
-            "location_address": meta.get("location_address"),
-            "location_city": meta.get("location_city"),
-            "distance": float(distances[0][rank])
+            "uid":              m["uid"],
+            "chunk_id":         m["chunk_id"],
+            "text":             m.get("text", ""),
+            "title_fr":         m.get("title_fr"),
+            "firstdate_begin":  m.get("firstdate_begin"),
+            "firstdate_end":    m.get("firstdate_end"),
+            "location_address": m.get("location_address"),
+            "location_city":    m.get("location_city"),
+            "distance":         float(distances[0][rank])
         })
     return results
 
@@ -270,7 +283,9 @@ def generer_reponse_rag(user_query: str) -> str:
             top_p=0.9,
             max_tokens=500
         )
-        return response.choices[0].message.content
+        answer = response.choices[0].message.content
+        logging.info("Réponse générée par Mistral (longueur=%d).", len(answer))
+        return answer
 
     except Exception as e:
         logging.error("Erreur lors de l'appel à Mistral Chat : %s", e)
