@@ -11,9 +11,7 @@ from mistralai.models.sdkerror import SDKError
 import argparse
 
 # === Configuration du logging ===
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s — %(levelname)s — %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s — %(levelname)s — %(message)s")
 
 # === Paramètres ===
 

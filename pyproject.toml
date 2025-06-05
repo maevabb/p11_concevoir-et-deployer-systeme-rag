@@ -19,6 +19,7 @@ mistralai = "^1.7.0"
 python-dotenv = "^1.1.0"
 pytest = "^8.3.5"
 bs4 = "^0.0.2"
+streamlit = "^1.45.1"
 
 
 [tool.poetry.group.dev.dependencies]
