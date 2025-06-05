@@ -156,15 +156,24 @@ def construire_system_message_rag(user_query: str, top_chunks: list[dict]) -> di
 
     # 1) On prépare le contexte issu de FAISS (les passages/chunks)
     if not top_chunks:
-        context_text = "Aucun contexte pertinent trouvé dans la base d'événements."
+            context_text = "Aucun contexte pertinent trouvé dans la base d'événements."
     else:
         fragments = []
         for i, chunk in enumerate(top_chunks, start=1):
-            fragment = (
+            # On lit les métadonnées qui ont été chargées dans faiss_metadata
+            titre = chunk.get("title_fr", "Titre inconnu")
+            date = chunk.get("firstdate_begin", "Date inconnue")
+            lieu = chunk.get("location_city", "Lieu inconnu")
+            descriptif = chunk.get("text", "")
+
+            fragments.append(
                 f"--- Contexte {i} (score FAISS={chunk['distance']:.3f}) ---\n"
-                f"{chunk['text']}"
+                f"Titre      : {titre}\n"
+                f"Date       : {date}\n"
+                f"Lieu       : {lieu}\n"
+                f"Descriptif : {descriptif}"
             )
-            fragments.append(fragment)
+
         context_text = "\n\n".join(fragments)
 
     # 2) On rédige le prompt système en respectant toutes les consignes
@@ -248,9 +257,7 @@ def generer_reponse_rag(user_query: str) -> str:
     # 2) Construction du system_message avec contexte + recommandations
     system_message = construire_system_message_rag(user_query, top_chunks)
 
-    # 3) On assemble la conversation complète pour l'appel chat :
-    #    - Le system_message en tête
-    #    - Les derniers messages de l'historique (pour garder le fil de la session)
+    # 3) Assembler la conversation : on place le system_message en tête
     prompt_history = construire_prompt_session()
     full_prompt = [system_message] + prompt_history
 
@@ -259,14 +266,11 @@ def generer_reponse_rag(user_query: str) -> str:
         response = client.chat.complete(
             model=MODEL_NAME,
             messages=full_prompt,
-            # Paramètres techniques :
             temperature=0.2,
             top_p=0.9,
-            max_tokens=300
+            max_tokens=500
         )
-        answer = response.choices[0].message.content
-        logging.info("Réponse générée par Mistral (longueur=%d).", len(answer))
-        return answer
+        return response.choices[0].message.content
 
     except Exception as e:
         logging.error("Erreur lors de l'appel à Mistral Chat : %s", e)

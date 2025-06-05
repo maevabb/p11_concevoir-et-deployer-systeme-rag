@@ -74,25 +74,43 @@ def clean_html(raw: str) -> str:
 
 def combine_descriptions(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Concatène title_fr, description_fr et longdescription_fr en un seul champ 'description',
-    puis nettoie le HTML.
+    Concatène title_fr, description_fr, longdescription_fr,  firstdate_begin, firstdate_end et location_city 
+    en un seul champ 'description', puis nettoie le HTML.
     """
     def make_desc(row):
         parts = []
-        # Titre
+
+        # 1) Titre
         if pd.notna(row["title_fr"]):
             parts.append(f"Titre : {row['title_fr']}")
-        # Résumé
+
+        # 2) Dates et ville
+        # On affiche firstdate_begin et firstdate_end si elles existent, ainsi que la ville
+        date_debut = row.get("firstdate_begin", None)
+        date_fin   = row.get("firstdate_end", None)
+        ville      = row.get("location_city", None)
+
+        if pd.notna(date_debut) and pd.notna(date_fin) and pd.notna(ville):
+            parts.append(f"Date : {date_debut} → {date_fin} (Ville : {ville})")
+        elif pd.notna(date_debut) and pd.notna(ville):
+            parts.append(f"Date : {date_debut} (Ville : {ville})")
+        elif pd.notna(ville):
+            parts.append(f"Ville : {ville}")
+
+        # 3) Résumé
         if pd.notna(row["description_fr"]):
             parts.append(f"Résumé : {row['description_fr']}")
-        # Détails
+
+        # 4) Détails (HTML nettoyé)
         if pd.notna(row["longdescription_fr"]):
-            parts.append(f"Détails : {clean_html(row['longdescription_fr'])}")
-        # Concatène et nettoie le HTML dans chaque bloc
+            details = clean_html(row["longdescription_fr"])
+            parts.append(f"Détails : {details}")
+
+        # 5) Concatène tous les blocs (deux retours à la ligne entre chaque)
         return "\n\n".join(parts)
 
     df["description"] = df.apply(make_desc, axis=1)
-    logging.info(f"Champ 'description' créé pour {len(df)} événements.")
+    logging.info(f"Champ 'description' enrichi (avec dates et ville) créé pour {len(df)} événements.")
     return df
 
 def select_columns(df: pd.DataFrame, cols) -> pd.DataFrame:
