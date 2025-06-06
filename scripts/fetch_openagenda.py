@@ -13,7 +13,8 @@ logging.basicConfig(
 BASE_URL = "https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/evenements-publics-openagenda"
 OUTPUT_PATH = Path("data/events_raw.json")
 
-CITY = "Paris"
+CITY = ""
+REGION = "Île-de-France"
 START_DATE = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
 END_DATE = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -26,7 +27,8 @@ def fetch_openagenda_events(base_url: str,
                             offset: int = 0, 
                             start_date: str | None = None, 
                             end_date: str | None = None, 
-                            city: str | None = None) -> tuple[list[dict], int]:
+                            city: str | None = None,
+                            region: str | None = None,) -> tuple[list[dict], int]:
     """
     Récupère des événements depuis l'API OpenAgenda (/exports/{format}),
     avec filtres optionnels sur la plage de dates et la ville.
@@ -57,6 +59,8 @@ def fetch_openagenda_events(base_url: str,
         conditions.append(f"firstdate_begin <= '{end_date}'")
     if city:
         conditions.append(f"location_city = '{city}'")
+    if region:
+        conditions.append(f"location_region = '{region}'")
 
     if conditions:
         params["where"] = " AND ".join(conditions)
@@ -102,8 +106,14 @@ def save_raw_events(events: list, output_path: str = "data/events_raw.json") -> 
 # === Exécution principale ===
 if __name__ == "__main__":
     logging.info(
-        "➡️ Chargement des événements pour %s entre %s et %s", CITY, START_DATE, END_DATE)
-    events, total = fetch_openagenda_events(BASE_URL, EXPORT_FORMAT, -1, 0, START_DATE, END_DATE, CITY)  
+        "➡️ Chargement des événements pour %s entre %s et %s", REGION, START_DATE, END_DATE,)
+    events, total = fetch_openagenda_events(base_url = BASE_URL, 
+                                            export_format = EXPORT_FORMAT, 
+                                            limit = -1, 
+                                            offset = 0, 
+                                            start_date = START_DATE, 
+                                            end_date = END_DATE, 
+                                            region = REGION)  
     save_raw_events(events, OUTPUT_PATH)
 
     # Vérification

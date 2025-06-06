@@ -117,11 +117,11 @@ def retrieve_top_k_chunks(query: str, k: int = TOP_K_CHUNKS) -> list[dict]:
         snippet = m.get("text", "").replace("\n", " ")[:100]  # On limite à 100 caractères pour le log
         logging.info(
             "%d. uid=%s chunk=%d score=%.4f",
-            rank+1, m["uid"], m["chunk_id"], float(distances[0][rank])
+            rank + 1, m["uid"], m["chunk_id"], float(distances[0][rank])
         )
-        logging.info("    Titre  : %s", m.get('title_fr'))
-        logging.info("    Dates  : %s → %s", m.get('firstdate_begin'), m.get('firstdate_end'))
-        logging.info("    Lieu   : %s, %s", m.get('location_address'), m.get('location_city'))
+        logging.info("    Titre  : %s", m.get("title_fr"))
+        logging.info("    Dates  : %s → %s", m.get("firstdate_begin"), m.get("firstdate_end"))
+        logging.info("    Lieu   : %s, %s", m.get("location_address"), m.get("location_city"))
         logging.info("    Extrait: %s…", snippet)
 
         results.append({
@@ -169,14 +169,14 @@ def construire_system_message_rag(user_query: str, top_chunks: list[dict]) -> di
 
     # 1) On prépare le contexte issu de FAISS (les passages/chunks)
     if not top_chunks:
-            context_text = "Aucun contexte pertinent trouvé dans la base d'événements."
+        context_text = "Aucun contexte pertinent trouvé dans la base d'événements."
     else:
         fragments = []
         for i, chunk in enumerate(top_chunks, start=1):
             # On lit les métadonnées qui ont été chargées dans faiss_metadata
-            titre = chunk.get("title_fr", "Titre inconnu")
-            date = chunk.get("firstdate_begin", "Date inconnue")
-            lieu = chunk.get("location_city", "Lieu inconnu")
+            titre     = chunk.get("title_fr", "Titre inconnu")
+            date      = chunk.get("firstdate_begin", "Date inconnue")
+            lieu      = chunk.get("location_city", "Lieu inconnu")
             descriptif = chunk.get("text", "")
 
             fragments.append(
@@ -209,7 +209,7 @@ SOURCES D'INFORMATION AUTORISÉES
    - Les métadonnées associées (uid, titre, date, lieu) sont stockées au format JSON.
 2. Modèle Mistral (mistral-embed + mistral-chat) :
    - Utilisé pour transformer les textes en vecteurs et pour formuler les réponses finales.
-   - Lors de la génération, vous devez impérativement vous appuyer seulement sur le contenu des passages fournis par Faiss.
+   - Vous devez impérativement vous appuyer uniquement sur le contenu des passages fournis par Faiss.
 
 Vous ne devez PAS :
 • Inventer d'événements, de dates ou de lieux qui ne figurent pas dans la base.
@@ -231,7 +231,7 @@ COMPORTEMENTS OBLIGATOIRES
    - Proposez toujours une alternative (ex. « Vous pourriez consulter notre page d'accueil pour découvrir tous les événements du mois » ou
      « Élargissez votre recherche à une autre ville »).
 4. Structure de la réponse :
-   - Introduction courte et polie (ex. « Bonjour ! Voici ce que j'ai trouvé pour … »).
+   - Introduction courte et polie (ex. « Voici ce que j'ai trouvé pour … »).
    - Liste numérotée ou à puces des événements :
        1. Titre : …
        2. Date : …
@@ -245,18 +245,20 @@ COMPORTEMENTS OBLIGATOIRES
 COMPORTEMENTS INTERDITS
 • Ne jamais halluciner :
   - N'ajoutez pas de détails (prix, réservation, playlist, etc.) qui ne proviennent pas explicitement du chunk retourné.
-  - Si vous n'êtes pas certain d'un élément mentionnez « information non disponible dans nos données actuelles ».
+  - Si vous n'êtes pas certain d'un élément, mentionnez « information non disponible dans nos données actuelles ».
 • Ne pas dépasser le périmètre des événements culturels :
   - Interrogez uniquement la base Faiss d'événements indexés.
   - Évitez toute recommandation de services extérieurs (restaurants, parkings, etc.), sauf si l'utilisateur le demande explicitement.
 • Ne pas communiquer de données privées :
   - N'incluez jamais d'informations personnelles ou sensibles (numéros de téléphone, adresse mail, données personnelles des organisateurs).
-"""
 
+INFORMATIONS RETROUVÉES :
+{context_text}
+
+"""
     return {"role": "system", "content": system_content}
 
 
-# Exemple d'utilisation dans votre fonction generer_reponse_rag :
 def generer_reponse_rag(user_query: str) -> str:
     """
     1. Récupère les top K chunks pertinents depuis FAISS.
@@ -276,12 +278,13 @@ def generer_reponse_rag(user_query: str) -> str:
 
     # 4) On appelle Mistral pour générer la réponse
     try:
+        # Pour minimiser les hallucinations, on fixe temperature à 0.0 et top_p à 1.0
         response = client.chat.complete(
             model=MODEL_NAME,
             messages=full_prompt,
-            temperature=0.2,
-            top_p=0.9,
-            max_tokens=500
+            temperature=0.0,
+            top_p=1.0,
+            max_tokens=1000
         )
         answer = response.choices[0].message.content
         logging.info("Réponse générée par Mistral (longueur=%d).", len(answer))
@@ -291,9 +294,9 @@ def generer_reponse_rag(user_query: str) -> str:
         logging.error("Erreur lors de l'appel à Mistral Chat : %s", e)
         return "Désolé, une erreur interne est survenue. Veuillez réessayer."
 
-  
-
 # === INTERFACE STREAMLIT ===
+
+st.title("Assistant Virtuel Puls-Events")
 
 # 1) Afficher tout l'historique (chat bubbles)
 for message in st.session_state["messages"]:
