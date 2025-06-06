@@ -104,7 +104,10 @@ def save_raw_events(events: list, output_path: str = "data/events_raw.json") -> 
     logging.info("Données brutes sauvegardées dans %s", output_path)
 
 # === Exécution principale ===
-if __name__ == "__main__":
+def main():
+    """
+    Point d'entrée : récupère depuis OpenAgenda et écrit dans data/events_raw.json.
+    """
     logging.info(
         "➡️ Chargement des événements pour %s entre %s et %s", REGION, START_DATE, END_DATE,)
     events, total = fetch_openagenda_events(base_url = BASE_URL, 
@@ -128,3 +131,6 @@ if __name__ == "__main__":
                 "📊 Nombre d'événements dans le fichier : %d (total attendu : %d)",count,total)
     except Exception as e:
         logging.error("Impossible de relire %s : %s", OUTPUT_PATH, e)
+
+if __name__ == "__main__":
+    main()

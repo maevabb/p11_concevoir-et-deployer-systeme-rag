@@ -3,12 +3,15 @@ import logging
 import json
 import time
 from pathlib import Path
+from dotenv import load_dotenv
 
 import numpy as np
 import faiss
 from mistralai import Mistral
 from mistralai.models.sdkerror import SDKError
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+load_dotenv()
 
 # === Configuration du logging ===
 logging.basicConfig(
