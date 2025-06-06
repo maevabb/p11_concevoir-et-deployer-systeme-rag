@@ -188,17 +188,18 @@ Enchaîner automatiquement toutes les étapes (extraction, nettoyage, vectorisat
 ---
 
 ## 6. Exécution du pipeline complet
+
 Il est recommandé d’utiliser Poetry pour isoler et reproduire l’environnement.
 Depuis la racine du projet :
-    ```bash
-    poetry install
-    poetry shell
-    run python run_pipeline.py
-    ```
+```bash
+poetry install
+poetry shell
+run python run_pipeline.py
+```
 Puis pour lancer l'assistant virtuel : 
-    ```bash
-    streamlit run puls_events_chatbot.py
-    ```
+```bash
+streamlit run puls_events_chatbot.py
+```
 
 ---
 
@@ -224,18 +225,18 @@ Les tests se trouvent dans `tests/test_rag_pipeline.py`. Ils valident :
     - Sa metadata contient bien text, firstdate_begin, location_city
 
 Pour lancer l’ensemble des tests :
-    ```bash
-    poetry run pytest
-    ```
+```bash
+poetry run pytest
+```
 
 ---
 
 ## 8. Fichier `.env`
 Le projet utilise l’API Mistral pour la génération d’embeddings et de réponses.
 Créez un fichier `.env` à la racine du projet contenant :
-    ```env
-    MISTRAL_API_KEY=VotreCléAPI_Mistral
-    ```
+```env
+MISTRAL_API_KEY=VotreCléAPI_Mistral
+```
 
 ---
 
