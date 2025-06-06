@@ -35,11 +35,11 @@ Le POC comprend :
 - Un **script de vectorisation** (`vectorize.py`) qui découpe les descriptions en chunks, génère des embeddings Mistral, construit un index Faiss et sauvegarde les métadonnées.
 - Un **bot Streamlit** (`puls_events_chatbot.py`) qui orchestre la logique RAG : recherche Faiss, construction du prompt système enrichi du contexte, appel au modèle Mistral-chat pour générer la réponse, et affichage en interface chat.
 - Un **script de tests** (`tests/test_rag_pipeline.py`) qui vérifie que :
-  1. Tous les événements nettoyés sont situés à ±1 an de la date courante.  
-  2. Tous les événements proviennent de la région Île-de-France.  
-  3. Le nombre de chunks générés correspond à la taille du metadata JSON.  
-  4. L’index Faiss contient autant de vecteurs que de chunks.  
-  5. Une recherche Faiss sur un chunk donné renvoie bien sa métadonnée associée.  
+  - Tous les événements nettoyés sont situés à ±1 an de la date courante.  
+  - Tous les événements proviennent de la région Île-de-France.  
+  - Le nombre de chunks générés correspond à la taille du metadata JSON.  
+  - L’index Faiss contient autant de vecteurs que de chunks.  
+  - Une recherche Faiss sur un chunk donné renvoie bien sa métadonnée associée.  
 
 ---
 
