@@ -54,8 +54,8 @@ Le POC comprend :
 ## 3. Installation
 1. Clonez ce dépôt :  
 ```bash
-git clone <URL_DU_REPO>
-cd p11-concevoir-et-deployer-systeme-rag
+git clone https://github.com/maevabb/p11_concevoir-et-deployer-systeme-rag
+cd p11_concevoir-et-deployer-systeme-rag
 ```
 
 2. Installez les dépendances avec Poetry :
