@@ -257,3 +257,7 @@ MISTRAL_API_KEY=VotreCléAPI_Mistral
 - `temperature = 0.0`
 - `top_p = 1.0`
 - `max_tokens = 1000`
+
+---
+
+Projet développé dans le cadre du parcours **Data Engineer** par OpenClassrooms.
