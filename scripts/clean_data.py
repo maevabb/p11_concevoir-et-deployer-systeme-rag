@@ -14,7 +14,7 @@ logging.basicConfig(
 
 INPUT_PATH  = Path("data/events_raw.json")
 OUTPUT_PATH = Path("data/events_clean.json")
-SELECT_COLUMNS = ["uid","title_fr","description","firstdate_begin","firstdate_end","location_address" ,"location_city"]
+SELECT_COLUMNS = ["uid","title_fr","description","firstdate_begin","firstdate_end","location_address" ,"location_city", "location_region"]
 
 # === Fonctions ===
 
